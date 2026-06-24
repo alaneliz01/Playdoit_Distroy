@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analizador de apuestas — valor, riesgo y varianza</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+  :root{
+    --bg: #0E1116;
+    --panel: #161B22;
+    --panel-2: #1B222C;
+    --border: #262E39;
+    --text: #E7E9EC;
+    --text-dim: #8993A1;
+    --pos: #34D399;
+    --neg: #FB7185;
+    --amber: #FBBF24;
+    --accent: #6D8CFF;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; animation: none !important; }
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    padding: 28px 20px 60px;
+    min-height: 100vh;
+  }
+  .wrap{ max-width: 1040px; margin: 0 auto; }
+
+  .eyebrow{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin: 0 0 6px;
+  }
+  h1{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 30px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .lede{
+    color: var(--text-dim);
+    font-size: 14.5px;
+    line-height: 1.55;
+    max-width: 640px;
+    margin: 0 0 26px;
+  }
+
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 22px;
+  }
+  .card-head{
+    display:flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .card-title{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .card-sub{
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin: 2px 0 0;
+  }
+
+  button{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  button:hover{ border-color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  }
+  button.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0E1116;
+    font-weight: 600;
+  }
+  button.primary:hover{ filter: brightness(1.08); }
+  button.ghost{ background: transparent; }
+  button:disabled{ opacity: .35; cursor: not-allowed; }
+
+  /* ---- market table (CSS grid "table") ---- */
+  .tbl-scroll{ overflow-x: auto; margin: 0 -2px; padding: 0 2px; }
+  .tbl{ min-width: 920px; }
+  .row{
+    display: grid;
+    grid-template-columns: 6px 1.5fr 92px 88px 88px 100px 88px 92px 80px 30px;
+    align-items: center;
+    column-gap: 8px;
+  }
+  .row.head{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 0 0 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .row.data{
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .row.data:last-of-type{ border-bottom: none; }
+  .edge-bar{ width: 6px; height: 28px; border-radius: 3px; background: var(--border); }
+  .edge-bar.pos{ background: var(--pos); }
+  .edge-bar.neg{ background: var(--neg); }
+  .edge-bar.neu{ background: var(--amber); }
+
+  .cell{ font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+  .cell.dim{ color: var(--text-dim); }
+  .cell input{
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 7px;
+    border-radius: 7px;
+  }
+  .name-cell input{ font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; }
+  .your-prob-wrap{ display:flex; align-items:center; gap: 4px; }
+  .reset-ico{
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 5px;
+  }
+  .reset-ico:hover{ color: var(--accent); background: var(--panel-2); }
+  .rm-btn{
+    background: none; border: none; color: var(--text-dim);
+    font-size: 15px; cursor: pointer; line-height: 1;
+  }
+  .rm-btn:hover{ color: var(--neg); }
+
+  .verdict{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 6px;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .verdict.pos{ background: rgba(52,211,153,.14); color: var(--pos); }
+  .verdict.neg{ background: rgba(251,113,133,.14); color: var(--neg); }
+  .verdict.neu{ background: rgba(251,191,36,.14); color: var(--amber); }
+
+  .tbl-actions{ display:flex; justify-content: space-between; align-items:center; margin-top: 14px; gap: 10px; flex-wrap: wrap; }
+
+  /* vig gauge */
+  .vig-wrap{ margin-top: 18px; }
+  .vig-label{
+    display:flex; justify-content: space-between; align-items: baseline;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-dim); margin-bottom: 6px;
+  }
+  .vig-label b{ color: var(--text); font-size: 13px; }
+  .gauge{ height: 8px; background: var(--panel-2); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+  .gauge-fill{ height: 100%; background: linear-gradient(90deg, var(--amber), var(--neg)); border-radius: 5px 0 0 5px; transition: width .25s ease; }
+
+  /* simulation panel */
+  .sim-controls{ display:flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field label{
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing:.04em;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .field select, .field input[type=number]{
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 7px 9px; border-radius: 7px;
+    min-width: 120px;
+  }
+  .chart-box{ position: relative; height: 280px; margin-bottom: 14px; }
+  .sim-note{ font-size: 12.5px; color: var(--text-dim); margin: -6px 0 14px; }
+  .stat-grid{ display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .stat{ background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .stat .k{ font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing:.04em; font-family:'IBM Plex Mono',monospace; }
+  .stat .v{ font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 600; margin-top: 3px; }
+  @media (max-width: 640px){ .stat-grid{ grid-template-columns: repeat(2,1fr); } }
+
+  details.explainer{ font-size: 13px; }
+  details.explainer summary{
+    cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px;
+    list-style: none;
+  }
+  details.explainer summary::-webkit-details-marker{ display:none; }
+  details.explainer summary:before{ content: '+ '; color: var(--accent); }
+  details.explainer[open] summary:before{ content: '− '; }
+  details.explainer dl{ margin: 14px 0 0; }
+  details.explainer dt{ font-family: 'IBM Plex Mono', monospace; color: var(--accent); font-size: 12.5px; margin-top: 10px; }
+  details.explainer dd{ color: var(--text-dim); margin: 3px 0 0; line-height: 1.5; }
+
+  .disclaimer{ font-size: 11.5px; color: var(--text-dim); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Riesgo · valor · varianza</p>
+  <h1>Analizador de apuestas</h1>
+  <p class="lede">Convierte cualquier cuota americana en probabilidad, calcula el margen de la casa, compara tu propia estimación contra el precio justo del mercado y mira cómo se comporta esa apuesta en variaciones simuladas. Esto no predice resultados — ordena los números para que decidas con criterio.</p>
+
+  <!-- MARKET TABLE -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <p class="card-title">Mercado</p>
+        <p class="card-sub">Carga las cuotas de un mismo mercado completo (ej. los 3 resultados de un 1X2). No mezcles mercados distintos en la misma tabla.</p>
+      </div>
+    </div>
+
+    <div class="tbl-scroll">
+      <div class="tbl">
+        <div class="row head">
+          <div></div>
+          <div>Selección</div>
+          <div title="Cuota en formato americano, ej. +3000 o -600">Cuota US</div>
+          <div title="Cuota convertida a formato decimal">Decimal</div>
+          <div title="Probabilidad que implica la cuota, incluyendo el margen de la casa">Implícita</div>
+          <div title="Probabilidad sin el margen de la casa (cuotas normalizadas a 100%)">Justa</div>
+          <div title="Tu propia estimación de probabilidad — edítala con tu análisis">Tu prob.</div>
+          <div title="Valor esperado por unidad apostada, usando tu probabilidad">EV</div>
+          <div title="Tamaño de apuesta sugerido como % de tu banca (Kelly a cuarto, más conservador que Kelly completo)">Kelly ¼</div>
+          <div title="Desviación estándar del resultado por unidad apostada — qué tanto varía">σ</div>
+        </div>
+        <div id="rows"></div>
+      </div>
+    </div>
+
+    <div class="tbl-actions">
+      <button id="addRow">+ Agregar selección</button>
+      <button id="resetProbs" class="ghost">Restablecer mis estimaciones</button>
+    </div>
+
+    <div class="vig-wrap">
+      <div class="vig-label"><span>Margen de la casa (vig) en este mercado</span><b id="vigVal">—</b></div>
+      <div class="gauge"><div class="gauge-fill" id="vigFill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- SIMULATION -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <p class="card-title">Simulación de varianza</p>
+        <p class="card-sub">Una apuesta con valor positivo puede igual perder dinero en el corto plazo. Esto corre muchos caminos al azar con tu probabilidad estimada para que veas el rango real de resultados, no solo el promedio.</p>
+      </div>
+    </div>
+
+    <div class="sim-controls">
+      <div class="field">
+        <label for="simSelect">Selección</label>
+        <select id="simSelect"></select>
+      </div>
+      <div class="field">
+        <label for="simN">N.º de apuestas</label>
+        <input type="number" id="simN" min="10" max="300" value="50">
+      </div>
+      <div class="field">
+        <label for="simStake">Tamaño de apuesta</label>
+        <select id="simStake">
+          <option value="kelly">Kelly ¼ (recomendado)</option>
+          <option value="flat">Plano — 1% de la banca</option>
+        </select>
+      </div>
+      <button id="runSim" class="primary">Simular</button>
+    </div>
+    <p class="sim-note" id="simNote">Banca inicial de 100 unidades. Se muestran 24 caminos aleatorios independientes junto con el crecimiento esperado en teoría.</p>
+
+    <div class="chart-box"><canvas id="simChart"></canvas></div>
+
+    <div class="stat-grid">
+      <div class="stat"><div class="k">Banca final promedio</div><div class="v" id="statMean">—</div></div>
+      <div class="stat"><div class="k">Mejor camino</div><div class="v" id="statMax">—</div></div>
+      <div class="stat"><div class="k">Peor camino</div><div class="v" id="statMin">—</div></div>
+      <div class="stat"><div class="k">Caminos rentables</div><div class="v" id="statWin">—</div></div>
+    </div>
+  </div>
+
+  <!-- EXPLAINER -->
+  <div class="card">
+    <details class="explainer">
+      <summary>Cómo se calcula cada columna</summary>
+      <dl>
+        <dt>Probabilidad implícita</dt>
+        <dd>1 ÷ cuota decimal. Es la probabilidad que la casa le asigna al resultado, pero todavía incluye su margen.</dd>
+        <dt>Margen de la casa (vig)</dt>
+        <dd>La suma de las probabilidades implícitas de todo el mercado, menos 100%. Si suma 106%, ese 6% es el margen que cobra la casa repartido entre todas las opciones.</dd>
+        <dt>Probabilidad justa</dt>
+        <dd>La probabilidad implícita de cada resultado dividida entre la suma de todas — quita el margen de la casa de forma proporcional.</dd>
+        <dt>Tu probabilidad</dt>
+        <dd>Tu propio estimado, editable. Por defecto se llena con la probabilidad justa porque es el mejor punto de partida neutral; el análisis solo es tan bueno como esta cifra.</dd>
+        <dt>EV (valor esperado)</dt>
+        <dd>Ganancia o pérdida promedio por cada unidad apostada, usando tu probabilidad: (tu prob. × ganancia neta) − (1 − tu prob.). Positivo no garantiza ganar esa apuesta, solo describe el promedio en muchas repeticiones.</dd>
+        <dt>Kelly ¼</dt>
+        <dd>Fracción de tu banca que la fórmula de Kelly sugiere arriesgar, dividida entre 4 para reducir la volatilidad de apostar el Kelly completo. Si el EV es negativo, la sugerencia es 0%.</dd>
+        <dt>σ (sigma)</dt>
+        <dd>Desviación estándar del resultado por unidad apostada. Cuanto más alta, más se dispersan los resultados posibles alrededor del promedio — más varianza, aunque el EV sea el mismo.</dd>
+      </dl>
+    </details>
+  </div>
+
+  <p class="disclaimer">Herramienta educativa e informativa. No predice resultados ni garantiza ganancias — la calidad del análisis depende de qué tan buena sea tu propia estimación de probabilidad. Apuesta solo dinero que puedas permitirte perder.</p>
+
+</div>
+
+<script>
+(function(){
+  let rowId = 0;
+  const rows = [];
+
+  function americanToDecimal(odds){
+    if (!isFinite(odds) || odds === 0) return NaN;
+    return odds > 0 ? 1 + odds/100 : 1 + 100/Math.abs(odds);
+  }
+  function parseOdds(str){
+    if (!str) return NaN;
+    const cleaned = String(str).replace(/[^\-+0-9.]/g, '');
+    if (cleaned === '' || cleaned === '+' || cleaned === '-') return NaN;
+    return parseFloat(cleaned);
+  }
+  function fmtPct(x, d){
+    if (!isFinite(x)) return '—';
+    return (x*100).toFixed(d===undefined?1:d) + '%';
+  }
+  function fmtNum(x, d){
+    if (!isFinite(x)) return '—';
+    return x.toFixed(d===undefined?2:d);
+  }
+
+  function addRow(name, oddsStr){
+    rows.push({ id: ++rowId, name: name || 'Nueva selección', odds: oddsStr || '', yourProb: null });
+    render();
+  }
+  function removeRow(id){
+    const idx = rows.findIndex(r => r.id === id);
+    if (idx > -1 && rows.length > 1) rows.splice(idx, 1);
+    render();
+  }
+
+  function compute(){
+    rows.forEach(r => {
+      const oddsNum = parseOdds(r.odds);
+      r._decimal = americanToDecimal(oddsNum);
+      r._implied = isFinite(r._decimal) && r._decimal > 0 ? 1/r._decimal : NaN;
+    });
+    const sumImplied = rows.reduce((s,r) => s + (isFinite(r._implied) ? r._implied : 0), 0);
+    rows.forEach(r => {
+      r._fair = (sumImplied > 0 && isFinite(r._implied)) ? r._implied/sumImplied : NaN;
+      const shownProbPct = (r.yourProb !== null && r.yourProb !== undefined && r.yourProb !== '')
+        ? parseFloat(r.yourProb) : (isFinite(r._fair) ? r._fair*100 : NaN);
+      r._shownProbPct = shownProbPct;
+      const p = isFinite(shownProbPct) ? Math.min(Math.max(shownProbPct/100, 0.0001), 0.9999) : NaN;
+      const b = isFinite(r._decimal) ? r._decimal - 1 : NaN;
+      if (isFinite(p) && isFinite(b)){
+        const mean = p*b - (1-p);
+        r._ev = mean; // per unit staked
+        const variance = p*Math.pow(b-mean,2) + (1-p)*Math.pow(-1-mean,2);
+        r._sigma = Math.sqrt(variance);
+        r._kellyFull = b > 0.0001 ? (p - (1-p)/b) : NaN;
+        r._kellyQ = isFinite(r._kellyFull) ? Math.max(r._kellyFull,0)/4 : NaN;
+      } else {
+        r._ev = NaN; r._sigma = NaN; r._kellyFull = NaN; r._kellyQ = NaN;
+      }
+    });
+    return { sumImplied };
+  }
+
+  function verdictFor(ev){
+    if (!isFinite(ev)) return { cls:'neu', label:'—' };
+    if (ev > 0.005) return { cls:'pos', label:'VALOR +' };
+    if (ev < -0.005) return { cls:'neg', label:'VALOR −' };
+    return { cls:'neu', label:'NEUTRAL' };
+  }
+
+  function render(){
+    const { sumImplied } = compute();
+    const container = document.getElementById('rows');
+    container.innerHTML = '';
+
+    rows.forEach(r => {
+      const v = verdictFor(r._ev);
+      const edgeCls = v.cls;
+      const row = document.createElement('div');
+      row.className = 'row data';
+      row.innerHTML = `
+        <div class="edge-bar ${edgeCls}"></div>
+        <div class="cell name-cell"><input type="text" value="${escapeAttr(r.name)}" data-id="${r.id}" data-field="name"></div>
+        <div class="cell"><input type="text" inputmode="numeric" placeholder="+150" value="${escapeAttr(r.odds)}" data-id="${r.id}" data-field="odds"></div>
+        <div class="cell dim">${fmtNum(r._decimal,2)}</div>
+        <div class="cell dim">${fmtPct(r._implied)}</div>
+        <div class="cell dim">${fmtPct(r._fair)}</div>
+        <div class="cell"><div class="your-prob-wrap">
+          <input type="number" step="0.1" min="0" max="100" value="${isFinite(r._shownProbPct) ? r._shownProbPct.toFixed(1) : ''}" data-id="${r.id}" data-field="yourProb">
+          <button class="reset-ico" title="Volver a la probabilidad justa" data-id="${r.id}" data-action="reset">↺</button>
+        </div></div>
+        <div class="cell" style="color:${edgeCls==='pos'?'var(--pos)':edgeCls==='neg'?'var(--neg)':'var(--text-dim)'}">${isFinite(r._ev) ? (r._ev>=0?'+':'') + fmtPct(r._ev) : '—'}</div>
+        <div class="cell dim">${isFinite(r._kellyQ) ? fmtPct(r._kellyQ) : '—'}</div>
+        <div class="cell dim">${fmtNum(r._sigma,2)}</div>
+        <div><button class="rm-btn" title="Quitar selección" data-id="${r.id}" data-action="remove">×</button></div>
+      `;
+      container.appendChild(row);
+    });
+
+    // vig
+    const vigPct = isFinite(sumImplied) ? (sumImplied - 1) * 100 : NaN;
+    document.getElementById('vigVal').textContent = isFinite(vigPct) ? vigPct.toFixed(1) + '%' : '—';
+    const fillPct = isFinite(vigPct) ? Math.min(Math.max(vigPct, 0), 25) / 25 * 100 : 0;
+    document.getElementById('vigFill').style.width = fillPct + '%';
+
+    refreshSimSelect();
+    wireRowEvents();
+  }
+
+  function escapeAttr(s){
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+
+  function wireRowEvents(){
+    document.querySelectorAll('#rows input').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const id = parseInt(e.target.dataset.id, 10);
+        const field = e.target.dataset.field;
+        const row = rows.find(r => r.id === id);
+        if (!row) return;
+        if (field === 'yourProb'){
+          row.yourProb = e.target.value === '' ? null : e.target.value;
+        } else {
+          row[field] = e.target.value;
+        }
+        render();
+        // restore focus to the same field after re-render
+        const again = document.querySelector(`input[data-id="${id}"][data-field="${field}"]`);
+        if (again){ again.focus(); try{ again.setSelectionRange(again.value.length, again.value.length); }catch(e){} }
+      });
+    });
+    document.querySelectorAll('[data-action="remove"]').forEach(btn => {
+      btn.addEventListener('click', (e) => removeRow(parseInt(e.target.dataset.id,10)));
+    });
+    document.querySelectorAll('[data-action="reset"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const row = rows.find(r => r.id === parseInt(e.target.dataset.id,10));
+        if (row){ row.yourProb = null; render(); }
+      });
+    });
+  }
+
+  document.getElementById('addRow').addEventListener('click', () => addRow());
+  document.getElementById('resetProbs').addEventListener('click', () => {
+    rows.forEach(r => r.yourProb = null);
+    render();
+  });
+
+  // ---- seed with the 1x2 example from the matchcard ----
+  addRow('Panamá', '+3000');
+  addRow('Empate', '+525');
+  addRow('Croacia', '-600');
+
+  // ================= SIMULATION =================
+  let chart = null;
+
+  function refreshSimSelect(){
+    const sel = document.getElementById('simSelect');
+    const prevVal = sel.value;
+    sel.innerHTML = '';
+    rows.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.name || ('Selección ' + r.id);
+      sel.appendChild(opt);
+    });
+    if (rows.some(r => String(r.id) === prevVal)) sel.value = prevVal;
+  }
+
+  function runSimulation(){
+    const id = parseInt(document.getElementById('simSelect').value, 10);
+    const row = rows.find(r => r.id === id);
+    const noteEl = document.getElementById('simNote');
+    if (!row || !isFinite(row._decimal) || !isFinite(row._shownProbPct)){
+      noteEl.textContent = 'Completa la cuota y la probabilidad de esa selección antes de simular.';
+      return;
+    }
+    const n = Math.min(Math.max(parseInt(document.getElementById('simN').value,10) || 50, 10), 300);
+    const stakeMode = document.getElementById('simStake').value;
+    const p = Math.min(Math.max(row._shownProbPct/100, 0.0001), 0.9999);
+    const b = row._decimal - 1;
+    const mean = row._ev;
+
+    let stakeFrac;
+    let noteExtra = '';
+    if (stakeMode === 'kelly'){
+      stakeFrac = isFinite(row._kellyQ) && row._kellyQ > 0 ? row._kellyQ : 0.01;
+      if (!(row._kellyQ > 0)) noteExtra = ' Kelly sugiere no apostar aquí (EV ≤ 0); se usó 1% plano para poder mostrar la simulación.';
+    } else {
+      stakeFrac = 0.01;
+    }
+    noteEl.textContent = 'Banca inicial de 100 unidades, apostando ' + (stakeFrac*100).toFixed(1) + '% de la banca en cada jugada.' + noteExtra;
+
+    const numPaths = 24;
+    const paths = [];
+    for (let k=0; k<numPaths; k++){
+      let bankroll = 100;
+      const path = [bankroll];
+      for (let i=0; i<n; i++){
+        const stake = bankroll * stakeFrac;
+        const win = Math.random() < p;
+        bankroll = win ? bankroll + stake*b : bankroll - stake;
+        bankroll = Math.max(bankroll, 0);
+        path.push(bankroll);
+      }
+      paths.push(path);
+    }
+
+    const expected = [100];
+    for (let i=0; i<n; i++){
+      expected.push(expected[i] * (1 + stakeFrac*mean));
+    }
+
+    const finals = paths.map(p => p[p.length-1]);
+    const meanFinal = finals.reduce((a,b)=>a+b,0)/finals.length;
+    const maxFinal = Math.max(...finals);
+    const minFinal = Math.min(...finals);
+    const winShare = finals.filter(f => f > 100).length / finals.length;
+
+    document.getElementById('statMean').textContent = meanFinal.toFixed(1);
+    document.getElementById('statMax').textContent = maxFinal.toFixed(1);
+    document.getElementById('statMin').textContent = minFinal.toFixed(1);
+    document.getElementById('statWin').textContent = (winShare*100).toFixed(0) + '%';
+
+    const labels = Array.from({length: n+1}, (_,i) => i);
+    const datasets = paths.map(path => ({
+      data: path,
+      borderColor: 'rgba(141,153,173,0.28)',
+      borderWidth: 1,
+      pointRadius: 0,
+      fill: false,
+      tension: 0
+    }));
+    datasets.push({
+      label: 'Crecimiento esperado (teórico)',
+      data: expected,
+      borderColor: '#6D8CFF',
+      borderDash: [6,4],
+      borderWidth: 2.5,
+      pointRadius: 0,
+      fill: false,
+      tension: 0
+    });
+
+    const ctx = document.getElementById('simChart').getContext('2d');
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              color: '#8993A1',
+              font: { family: 'IBM Plex Mono', size: 11 },
+              filter: (item) => item.text
+            }
+          },
+          tooltip: { enabled: false }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'N.º de apuesta', color: '#8993A1', font:{family:'IBM Plex Mono', size:11} },
+            ticks: { color: '#8993A1', font:{family:'IBM Plex Mono', size:10}, maxTicksLimit: 8 },
+            grid: { color: '#262E39' }
+          },
+          y: {
+            title: { display: true, text: 'Banca (unidades)', color: '#8993A1', font:{family:'IBM Plex Mono', size:11} },
+            ticks: { color: '#8993A1', font:{family:'IBM Plex Mono', size:10} },
+            grid: { color: '#262E39' }
+          }
+        }
+      }
+    });
+  }
+
+  document.getElementById('runSim').addEventListener('click', runSimulation);
+
+  render();
+  // run an initial simulation once Chart.js + rows are ready
+  setTimeout(runSimulation, 50);
+})();
+</script>
+</body>
+</html>
